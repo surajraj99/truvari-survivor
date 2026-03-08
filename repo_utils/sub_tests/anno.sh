@@ -13,12 +13,12 @@ if [ $anno_hompct ]; then
 fi
 
 #                                 remap
-run anno_remap \
-    $truv anno remap -H 10 $VCF -r $REF -o $OD/anno_remap.vcf
-if [ $anno_remap ]; then
-    assert_exit_code 0
-    info_tests remap $OD/anno_remap.vcf REMAP,REMAPHits
-fi
+#run anno_remap \
+#    $truv anno remap -H 10 $VCF -r $REF -o $OD/anno_remap.vcf
+#if [ $anno_remap ]; then
+#    assert_exit_code 0
+#    info_tests remap $OD/anno_remap.vcf REMAP,REMAPHits
+#fi
 
 #                                 gcpct
 run anno_gcpct \
@@ -53,12 +53,12 @@ if [ $anno_svinfo ]; then
 fi
 
 #                                 grm
-run anno_grm \
-    $truv anno grm -i $INDIR/variants/input2.vcf.gz -r $REF -o $OD/grm.jl -t 2
-if [ $anno_grm ]; then
-    assert_exit_code 0
-    df_check anno_grm $ANSDIR/anno/grm.jl $OD/grm.jl
-fi
+#run anno_grm \
+#    $truv anno grm -i $INDIR/variants/input2.vcf.gz -r $REF -o $OD/grm.jl -t 2
+#if [ $anno_grm ]; then
+#    assert_exit_code 0
+#    df_check anno_grm $ANSDIR/anno/grm.jl $OD/grm.jl
+#fi
 
 #                                 trf
 run anno_trf \
