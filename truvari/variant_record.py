@@ -60,6 +60,9 @@ class VariantRecord:
     def __str__(self):
         return str(self._record)
 
+    def __repr__(self):
+        return f"<{self.chrom}:{self.pos + 1}:{self.id}>"
+
     def allele_freq_annos(self, samples=None):
         """
         Calculate allele annotations for a VCF Entry
@@ -781,8 +784,8 @@ class VariantRecord:
         ret.state = True
 
         if not self.params.typeignore and not self.same_type(other):
-            logging.debug("%s and %s are not the same SVTYPE",
-                          str(self), str(other))
+            logging.debug("%r and %r are not the same SVTYPE",
+                          self, other)
             ret.state = False
             if self.params.short_circuit:
                 return ret
@@ -790,8 +793,8 @@ class VariantRecord:
         bstart, bend = self.boundaries()
         cstart, cend = other.boundaries()
         if not truvari.overlaps(bstart - self.params.refdist, bend + self.params.refdist, cstart, cend):
-            logging.debug("%s and %s are not within REFDIST",
-                          str(self), str(other))
+            logging.debug("%r and %r are not within REFDIST",
+                          self, other)
             ret.state = False
             if self.params.short_circuit:
                 return ret
@@ -799,8 +802,8 @@ class VariantRecord:
         ret.sizesim, ret.sizediff = self.sizesim(other)
         m_size = min(self.var_size(), other.var_size())
         if ret.sizesim < self.params.get_pctsize(m_size):
-            logging.debug("%s and %s size similarity is too low (%.3f)",
-                          str(self), str(other), ret.sizesim)
+            logging.debug("%r and %r size similarity is too low (%.3f < %.3f)",
+                          self, other, ret.sizesim, self.params.get_pctsize(m_size))
             ret.state = False
             if self.params.short_circuit:
                 return ret
@@ -810,8 +813,8 @@ class VariantRecord:
 
         ret.ovlpct = self.recovl(other)
         if ret.ovlpct < self.params.pctovl:
-            logging.debug("%s and %s overlap percent is too low (%.3f)",
-                          str(self), str(other), ret.ovlpct)
+            logging.debug("%r and %r overlap percent is too low (%.3f < %.3f)",
+                          self, other, ret.ovlpct, self.params.pctovl)
             ret.state = False
             if self.params.short_circuit:
                 return ret
@@ -819,8 +822,8 @@ class VariantRecord:
         if self.params.pctseq > 0 and self.is_resolved() and other.is_resolved():
             ret.seqsim = self.seqsim(other)
             if ret.seqsim < self.params.get_pctseq(m_size):
-                logging.debug("%s and %s sequence similarity is too low (%.3ff)",
-                              str(self), str(other), ret.seqsim)
+                logging.debug("%r and %r sequence similarity is too low (%.3f < %.3f)",
+                              self, other, ret.seqsim, self.params.get_pctseq(m_size))
                 ret.state = False
                 if self.params.short_circuit:
                     return ret
