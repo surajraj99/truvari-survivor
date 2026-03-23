@@ -201,55 +201,69 @@ def survivor_main(args):
     file_iters = [('base', tagged_variant_stream_single(caller, params)) for caller in callers]
     chunks = truvari.chunker(params, *file_iters)
 
-    for chunk, chunk_id in chunks:
-        # Custom robust merging for survivor
-        # We don't use DoublePrio here because of its size-sorting assumptions
-        variants = sorted(chunk['base'], key=lambda x: (x.chrom, x.pos))
-        used = [False] * len(variants)
-        
-        if args.debug:
-            logging.debug("Chunk %d has %d variants", chunk_id, len(variants))
+    # Use rich for progress reporting if not debugging
+    from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn
+    
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        "[progress.percentage]{task.percentage:>3.0f}%",
+        TimeElapsedColumn(),
+    ) as progress:
+        main_task = progress.add_task("[cyan]Processing chunks...", total=None)
 
-        group_count = 0
-        for i, var in enumerate(variants):
-            if used[i]:
-                continue
-            
-            # Start a new group
-            group_count += 1
-            current_group = [var]
-            used[i] = True
-            
-            # Find all matching variants (chaining)
-            # This is O(N^2) within a chunk, but chunks are small
-            changed = True
-            while changed:
-                changed = False
-                for j, candidate in enumerate(variants):
-                    if used[j]:
-                        continue
-                    
-                    # Check if candidate matches ANY member of current_group
-                    matched = False
-                    for member in current_group:
-                        mat = member.match(candidate)
-                        if mat.state:
-                            matched = True
-                            break
-                        elif args.debug:
-                            # Log why it didn't match
-                            # We can't easily get the reason from MatchResult if state is False
-                            # but we can do a manual check or just log the candidates
-                            pass
-                    
-                    if matched:
-                        current_group.append(candidate)
-                        used[j] = True
-                        changed = True
+        for chunk, chunk_id in chunks:
+            progress.update(main_task, description=f"[cyan]Processing chunk {chunk_id}...")
+            # Custom robust merging for survivor
+            # We don't use DoublePrio here because of its size-sorting assumptions
+            variants = sorted(chunk['base'], key=lambda x: (x.chrom, x.pos))
+            used = [False] * len(variants)
             
             if args.debug:
-                logging.debug("Group %d has %d members: %s", group_count, len(current_group), 
-                              ", ".join([f"{v.chrom}:{v.pos}:{v.id}" for v in current_group]))
+                logging.debug("Chunk %d has %d variants", chunk_id, len(variants))
+
+            group_count = 0
+            for i, var in enumerate(variants):
+                if used[i]:
+                    continue
+                
+                # Start a new group
+                group_count += 1
+                current_group = [var]
+                used[i] = True
+                
+                # Find all matching variants (chaining)
+                # This is O(N^2) within a chunk, but chunks are small
+                changed = True
+                while changed:
+                    changed = False
+                    for j, candidate in enumerate(variants):
+                        if used[j]:
+                            continue
+                        
+                        # Pre-filter check to avoid calling match() too much (which logs debug)
+                        # We can do a quick check of REFDIST and SVTYPE before calling match
+                        vstart, vend = var.boundaries()
+                        cstart, cend = candidate.boundaries()
+                        if not truvari.overlaps(vstart - params.refdist, vend + params.refdist, cstart, cend):
+                            continue
+                        
+                        # Check if candidate matches ANY member of current_group
+                        matched = False
+                        for member in current_group:
+                            mat = member.match(candidate)
+                            if mat.state:
+                                matched = True
+                                break
+                        
+                        if matched:
+                            current_group.append(candidate)
+                            used[j] = True
+                            changed = True
+                
+                if args.debug:
+                    logging.debug("Group %d has %d members: %s", group_count, len(current_group), 
+                                  ", ".join([repr(v) for v in current_group]))
             
             # current_group now has all linked variants
             # We pick the first one as representative
