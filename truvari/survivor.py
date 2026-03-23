@@ -251,6 +251,10 @@ def survivor_main(args):
                 logging.debug("Group %d has %d members: %s", group_count, len(current_group), 
                               ", ".join([f"{v.chrom}:{v.pos}:{v.id}" for v in current_group]))
             
+            # current_group now has all linked variants
+            # We pick the first one as representative
+            rep = current_group[0]
+            
             # Create a new record in the output
             new_record = out_vcf.new_record()
             new_record.chrom = rep.chrom
