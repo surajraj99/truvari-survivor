@@ -249,19 +249,24 @@ def survivor_main(args):
                             continue
                         
                         # Pre-filter check to avoid calling match() too much (which logs debug)
-                        # We can do a quick check of REFDIST and SVTYPE before calling match
-                        vstart, vend = var.boundaries()
-                        cstart, cend = candidate.boundaries()
-                        if not truvari.overlaps(vstart - params.refdist, vend + params.refdist, cstart, cend):
-                            continue
-                        
-                        # Check if candidate matches ANY member of current_group
+                        # Check if candidate overlaps with the expanded range of ANY member of current_group
                         matched = False
                         for member in current_group:
-                            mat = member.match(candidate)
-                            if mat.state:
-                                matched = True
-                                break
+                            vstart, vend = member.boundaries()
+                            cstart, cend = candidate.boundaries()
+                            
+                            # Manual debug for the problematic chr18 variants
+                            if args.debug and member.chrom == "chr18" and candidate.chrom == "chr18":
+                                if (abs(member.pos - 14313385) < 10 and abs(candidate.pos - 14313170) < 10) or \
+                                   (abs(member.pos - 14313170) < 10 and abs(candidate.pos - 14313385) < 10):
+                                    logging.debug("MANUAL CHECK: Comparing %r and %r", member, candidate)
+                                    logging.debug("MANUAL CHECK: Overlap check: %s", truvari.overlaps(vstart - params.refdist, vend + params.refdist, cstart, cend))
+
+                            if truvari.overlaps(vstart - params.refdist, vend + params.refdist, cstart, cend):
+                                mat = member.match(candidate)
+                                if mat.state:
+                                    matched = True
+                                    break
                         
                         if matched:
                             current_group.append(candidate)
