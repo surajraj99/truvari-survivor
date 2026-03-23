@@ -34,12 +34,12 @@ def parse_args(args):
     thresg = parser.add_argument_group("Comparison Threshold Arguments")
     thresg.add_argument("-r", "--refdist", type=truvari.restricted_int, default=500,
                         help="Max reference location distance (%(default)s)")
-    thresg.add_argument("-p", "--pctseq", type=truvari.restricted_float, default=0.70,
+    thresg.add_argument("-p", "--pctseq", type=truvari.restricted_float, default=0.0,
                         help="Min percent sequence similarity. Set to 0 to ignore. (%(default)s)")
     thresg.add_argument("-P", "--pctsize", type=truvari.restricted_float, default=0.70,
                         help="Min pct allele size similarity (minvarsize/maxvarsize) (%(default)s)")
-    thresg.add_argument("-O", "--pctovl", type=truvari.restricted_float, default=0.0,
-                        help="Min pct reciprocal overlap (%(default)s) for DEL events")
+    thresg.add_argument("-O", "--pctovl", type=truvari.restricted_float, default=0.70,
+                        help="Min pct reciprocal overlap (%(default)s)")
     thresg.add_argument("-t", "--typeignore", action="store_true", default=False,
                         help="Variant types don't need to match to compare (%(default)s)")
     thresg.add_argument("-n", "--no-roll", action="store_true",
