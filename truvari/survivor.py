@@ -60,11 +60,13 @@ def parse_args(args):
                         help="Minimum variant size to consider for comparison (%(default)s)")
     filteg.add_argument("-S", "--sizemax", type=int, default=50000,
                         help="Maximum variant size to consider for comparison (-1 = off; %(default)s)")
-    filteg.add_argument("--passonly", action="store_true", default=False,
+    parser.add_argument("--passonly", action="store_true", default=False,
                         help="Only consider calls with FILTER == PASS")
 
     parser.add_argument("--debug", action="store_true", default=False,
                         help="Verbose logging")
+    parser.add_argument("--log", type=str, default=None,
+                        help="Log file to save debug output")
 
     args = parser.parse_args(args)
     if args.dynthresh is not None:
@@ -177,6 +179,11 @@ def survivor_main(args):
     """
     args = parse_args(args)
     truvari.setup_logging(args.debug, show_version=True)
+    
+    if args.log:
+        fh = logging.FileHandler(args.log)
+        fh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+        logging.getLogger().addHandler(fh)
 
     if not args.input and not args.list:
         logging.error("Must specify either --input or --list")
