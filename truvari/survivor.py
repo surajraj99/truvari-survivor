@@ -192,6 +192,7 @@ def survivor_main(args):
     params.sorter = SORTS['first']
     params.gt = 'off'
     params.chain = True # Enable chaining by default for survivor-style merging
+    params.chunksize = 1000000 # Large chunksize to prevent splitting variants into different chunks
 
     out_header = create_survivor_header(callers)
     out_vcf = pysam.VariantFile(args.output, 'w', header=out_header)
@@ -206,6 +207,9 @@ def survivor_main(args):
         variants = sorted(chunk['base'], key=lambda x: (x.chrom, x.pos))
         used = [False] * len(variants)
         
+        if args.debug:
+            logging.debug("Chunk %d has %d variants", chunk_id, len(variants))
+
         group_count = 0
         for i, var in enumerate(variants):
             if used[i]:
@@ -232,15 +236,20 @@ def survivor_main(args):
                         if mat.state:
                             matched = True
                             break
+                        elif args.debug:
+                            # Log why it didn't match
+                            # We can't easily get the reason from MatchResult if state is False
+                            # but we can do a manual check or just log the candidates
+                            pass
                     
                     if matched:
                         current_group.append(candidate)
                         used[j] = True
                         changed = True
             
-            # current_group now has all linked variants
-            # We pick the first one as representative (or we could pick the most supported)
-            rep = current_group[0]
+            if args.debug:
+                logging.debug("Group %d has %d members: %s", group_count, len(current_group), 
+                              ", ".join([f"{v.chrom}:{v.pos}:{v.id}" for v in current_group]))
             
             # Create a new record in the output
             new_record = out_vcf.new_record()
