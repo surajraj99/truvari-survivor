@@ -25,6 +25,7 @@ source $TESTSRC/sub_tests/refine.sh
 source $TESTSRC/sub_tests/segment.sh
 source $TESTSRC/sub_tests/stratify.sh
 source $TESTSRC/sub_tests/stratp.sh
+source $TESTSRC/sub_tests/survivor.sh
 source $TESTSRC/sub_tests/unittests.sh
 source $TESTSRC/sub_tests/vcf2df.sh
 source $TESTSRC/sub_tests/version.sh
