@@ -224,7 +224,12 @@ def survivor_main(args):
             # Copy INFO
             for k, v in group.entry.info.items():
                 if k in out_header.info:
-                    new_record.info[k] = v
+                    try:
+                        new_record.info[k] = v
+                    except (TypeError, ValueError):
+                        # Some INFO fields might have type mismatches between VCFs
+                        # or pysam might struggle with certain multi-valued fields
+                        continue
             
             # Annotate with SURVIVOR fields
             annotate_survivor(new_record, group, callers)
