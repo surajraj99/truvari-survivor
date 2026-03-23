@@ -194,12 +194,12 @@ def survivor_main(args):
     params = truvari.VariantParams(args=args,
                                    short_circuit=False,
                                    skip_gt=True,
-                                   sizefilt=args.sizemin,
-                                   chunksize=1000000)
+                                   sizefilt=args.sizemin)
     # Extra attributes needed
     params.sorter = SORTS['first']
     params.gt = 'off'
     params.chain = True # Enable chaining by default for survivor-style merging
+    params.chunksize = 10000000 # Very large chunksize to prevent splitting variants into different chunks
 
     out_header = create_survivor_header(callers)
     out_vcf = pysam.VariantFile(args.output, 'w', header=out_header)
