@@ -185,15 +185,13 @@ def survivor_main(args):
     callers = get_callers(args.input, args.list)
 
     params = truvari.VariantParams(args=args,
-                                   short_circuit=True,
+                                   short_circuit=False,
                                    skip_gt=True,
                                    sizefilt=args.sizemin)
-    # Extra attributes needed for collapse_chunk
+    # Extra attributes needed
     params.sorter = SORTS['first']
     params.gt = 'off'
-    params.chain = False
-    params.hap = False
-    params.consolidate = False
+    params.chain = True # Enable chaining by default for survivor-style merging
 
     out_header = create_survivor_header(callers)
     out_vcf = pysam.VariantFile(args.output, 'w', header=out_header)
@@ -203,54 +201,94 @@ def survivor_main(args):
     chunks = truvari.chunker(params, *file_iters)
 
     for chunk, chunk_id in chunks:
-        # Since we use 'base' for all, they are all in chunk['base']
-        collapsed_groups = collapse_chunk((chunk, chunk_id), params)
+        # Custom robust merging for survivor
+        # We don't use DoublePrio here because of its size-sorting assumptions
+        variants = sorted(chunk['base'], key=lambda x: (x.chrom, x.pos))
+        used = [False] * len(variants)
         
-        for group in collapsed_groups:
-            # group is a CollapsedCalls object
-            if group.entry is None:
+        group_count = 0
+        for i, var in enumerate(variants):
+            if used[i]:
                 continue
-                
+            
+            # Start a new group
+            group_count += 1
+            current_group = [var]
+            used[i] = True
+            
+            # Find all matching variants (chaining)
+            # This is O(N^2) within a chunk, but chunks are small
+            changed = True
+            while changed:
+                changed = False
+                for j, candidate in enumerate(variants):
+                    if used[j]:
+                        continue
+                    
+                    # Check if candidate matches ANY member of current_group
+                    matched = False
+                    for member in current_group:
+                        mat = member.match(candidate)
+                        if mat.state:
+                            matched = True
+                            break
+                    
+                    if matched:
+                        current_group.append(candidate)
+                        used[j] = True
+                        changed = True
+            
+            # current_group now has all linked variants
+            # We pick the first one as representative (or we could pick the most supported)
+            rep = current_group[0]
+            
             # Create a new record in the output
             new_record = out_vcf.new_record()
-            new_record.chrom = group.entry.chrom
-            new_record.pos = group.entry.pos
-            new_record.id = group.entry.id
-            new_record.ref = group.entry.ref
-            new_record.alts = group.entry.alts
-            new_record.qual = group.entry.qual
+            new_record.chrom = rep.chrom
+            new_record.pos = rep.pos
+            new_record.id = rep.id
+            new_record.ref = rep.ref
+            new_record.alts = rep.alts
+            new_record.qual = rep.qual
             
             # Copy filters
-            for f in group.entry.filter.keys():
+            for f in rep.filter.keys():
                 new_record.filter.add(f)
             
-            # Copy INFO
-            for k, v in group.entry.info.items():
+            # Copy INFO from representative
+            for k, v in rep.info.items():
                 if k in out_header.info and k != "END":
                     try:
                         new_record.info[k] = v
                     except (TypeError, ValueError):
                         continue
             
-            # Properly set END/stop
-            new_record.stop = group.entry.stop
+            # Properly set END/stop (max of group)
+            new_record.stop = max(_.stop for _ in current_group)
 
-            # Annotate with SURVIVOR fields
-            annotate_survivor(new_record, group, callers)
+            # Calculate SURVIVOR fields
+            num_callers = len(callers)
+            supp_vec = [0] * num_callers
+            caller_ids = set()
+            for v in current_group:
+                if hasattr(v, 'caller_id'):
+                    caller_ids.add(v.caller_id)
+                    supp_vec[v.caller_id] = 1
+            
+            new_record.info["SUPP"] = len(caller_ids)
+            new_record.info["SUPP_VEC"] = "".join(map(str, supp_vec))
+            new_record.info["CALLERS"] = [callers[idx].name for idx in sorted(list(caller_ids))]
             
             # Set genotypes for each caller
             caller_to_record = {}
-            if hasattr(group.entry, 'caller_id'):
-                caller_to_record[group.entry.caller_id] = group.entry
-            for match in group.matches:
-                if hasattr(match.comp, 'caller_id'):
-                    if match.comp.caller_id not in caller_to_record:
-                        caller_to_record[match.comp.caller_id] = match.comp
+            for v in current_group:
+                if hasattr(v, 'caller_id'):
+                    if v.caller_id not in caller_to_record:
+                        caller_to_record[v.caller_id] = v
             
             for caller in callers:
                 if caller.index in caller_to_record:
                     src = caller_to_record[caller.index]
-                    # SURVIVOR format: just the first sample's GT
                     try:
                         new_record.samples[caller.name]['GT'] = src.samples[0]['GT']
                     except (KeyError, IndexError):
