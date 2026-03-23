@@ -194,12 +194,12 @@ def survivor_main(args):
     params = truvari.VariantParams(args=args,
                                    short_circuit=False,
                                    skip_gt=True,
-                                   sizefilt=args.sizemin)
+                                   sizefilt=args.sizemin,
+                                   chunksize=1000000)
     # Extra attributes needed
     params.sorter = SORTS['first']
     params.gt = 'off'
     params.chain = True # Enable chaining by default for survivor-style merging
-    params.chunksize = 1000000 # Large chunksize to prevent splitting variants into different chunks
 
     out_header = create_survivor_header(callers)
     out_vcf = pysam.VariantFile(args.output, 'w', header=out_header)
@@ -270,7 +270,7 @@ def survivor_main(args):
                 
                 if args.debug:
                     logging.debug("Group %d has %d members: %s", group_count, len(current_group), 
-                                  ", ".join([repr(v) for v in current_group]))
+                                  ", ".join([f"{v!r}" for v in current_group]))
             
             # current_group now has all linked variants
             # We pick the first one as representative
