@@ -121,6 +121,9 @@ def create_survivor_header(callers):
     header.add_line('##INFO=<ID=SUPP_VEC,Number=1,Type=String,Description="Vector of callers supporting the variant">')
     header.add_line('##INFO=<ID=CALLERS,Number=.,Type=String,Description="Names of callers supporting the variant">')
     
+    # Add standard GT field
+    header.add_line('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">')
+    
     # Add standard SV fields that are often expected
     header.add_line('##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">')
     header.add_line('##INFO=<ID=SVLEN,Number=1,Type=Integer,Description="Difference in length between REF and ALT alleles">')
@@ -223,12 +226,15 @@ def survivor_main(args):
             
             # Copy INFO
             for k, v in group.entry.info.items():
-                if k in out_header.info:
+                if k in out_header.info and k != "END":
                     try:
                         new_record.info[k] = v
                     except (TypeError, ValueError):
                         continue
             
+            # Properly set END/stop
+            new_record.stop = group.entry.stop
+
             # Annotate with SURVIVOR fields
             annotate_survivor(new_record, group, callers)
             
@@ -245,7 +251,10 @@ def survivor_main(args):
                 if caller.index in caller_to_record:
                     src = caller_to_record[caller.index]
                     # SURVIVOR format: just the first sample's GT
-                    new_record.samples[caller.name]['GT'] = src.samples[0]['GT']
+                    try:
+                        new_record.samples[caller.name]['GT'] = src.samples[0]['GT']
+                    except (KeyError, IndexError):
+                        new_record.samples[caller.name]['GT'] = (None, None)
                 else:
                     new_record.samples[caller.name]['GT'] = (None, None)
             
