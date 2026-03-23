@@ -17,6 +17,7 @@ from truvari.divide import divide_main
 from truvari.vcf2df import vcf2df_main
 from truvari.refine import refine_main
 from truvari.collapse import collapse_main
+from truvari.survivor import survivor_main
 from truvari.stratify import stratify_main
 from truvari.stratp_test import stratp_main
 from truvari.segmentation import segment_main
@@ -44,6 +45,7 @@ TOOLS = {"bench": bench_main,
          "refine": refine_main,
          "ga4gh": make_ga4gh_main,
          "stratp": stratp_main,
+         "survivor": survivor_main,
          "version": flat_version}
 
 USAGE = f"""\
@@ -56,6 +58,7 @@ USAGE = f"""\
 [bold underline]Merging[/]
   [cyan]collapse[/]     Collapse redundant VCF entries
   [cyan]phab[/]         Variant harmonization using MSA
+  [cyan]survivor[/]     N-way VCF merging
 
 [bold underline]Analysis[/]
   [cyan]consistency[/]  Consistency report between multiple VCFs
