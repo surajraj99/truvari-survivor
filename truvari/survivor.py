@@ -204,78 +204,86 @@ def survivor_main(args):
     out_header = create_survivor_header(callers)
     out_vcf = pysam.VariantFile(args.output, 'w', header=out_header)
 
-    # Use chunker to get variants from all callers
+    # Use file_zipper to get variants from all callers in a stream
     file_iters = [('base', tagged_variant_stream_single(caller, params)) for caller in callers]
-    chunks = truvari.chunker(params, *file_iters)
+    variant_stream = truvari.file_zipper(*file_iters)
 
-    # Use rich for progress reporting if not debugging
-    from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn
-    
-    with Progress(
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        "[progress.percentage]{task.percentage:>3.0f}%",
-        TimeElapsedColumn(),
-    ) as progress:
-        main_task = progress.add_task("[cyan]Processing chunks...", total=None)
+    # Collect all variants from all callers and group by chromosome
+    # This prevents split-chromosome issues due to non-lexicographical sorting in VCFs
+    all_chrom_variants = defaultdict(list)
+    for key, var in variant_stream:
+        all_chrom_variants[var.chrom].append(var)
 
-        for chunk, chunk_id in chunks:
-            progress.update(main_task, description=f"[cyan]Processing chunk {chunk_id}...")
-            # Custom robust merging for survivor
-            # We don't use DoublePrio here because of its size-sorting assumptions
-            variants = sorted(chunk['base'], key=lambda x: (x.chrom, x.pos))
-            used = [False] * len(variants)
+    for chrom, variants in all_chrom_variants.items():
+        logging.info("Processing chromosome %s", chrom)
+        
+        # Ensure they are sorted by position
+        variants.sort(key=lambda x: x.pos)
+        
+        used = [False] * len(variants)
+        group_count = 0
+        
+        for i, var in enumerate(variants):
+            if used[i]:
+                continue
+            
+            # Start a new group
+            group_count += 1
+            current_group = [var]
+            used[i] = True
+            
+            # Find all matching variants (chaining)
+            changed = True
+            while changed:
+                changed = False
+                for j, candidate in enumerate(variants):
+                    if used[j]:
+                        continue
+                    
+                    # Check if candidate matches ANY member of current_group
+                    matched = False
+                    for member in current_group:
+                        # Manual super-debug for the problematic chr18 variants
+                        is_target = False
+                        if args.debug and chrom == "chr18":
+                            m_pos = member.pos + 1
+                            c_pos = candidate.pos + 1
+                            if (abs(m_pos - 14313385) < 50 or abs(m_pos - 14313170) < 50) and \
+                               (abs(c_pos - 14313385) < 50 or abs(c_pos - 14313170) < 50):
+                                is_target = True
+                                logging.debug("SUPER DEBUG: Comparing %r and %r", member, candidate)
+
+                        vstart, vend = member.boundaries()
+                        cstart, cend = candidate.boundaries()
+                        
+                        # Within range check
+                        in_range = truvari.overlaps(vstart - params.refdist, vend + params.refdist, cstart, cend)
+                        if is_target:
+                            logging.debug("SUPER DEBUG: In range check: %s (dist: %d)", in_range, abs(vstart - cstart))
+
+                        if in_range:
+                            mat = member.match(candidate)
+                            if is_target:
+                                logging.debug("SUPER DEBUG: Match state: %s", mat.state)
+                                if not mat.state:
+                                    # Log why it failed
+                                    m_size = min(member.var_size(), candidate.var_size())
+                                    logging.debug("SUPER DEBUG: SVTYPE same: %s (%s vs %s)", member.var_type() == candidate.var_type(), member.var_type(), candidate.var_type())
+                                    logging.debug("SUPER DEBUG: Sizesim: %.3f (min %.3f)", member.sizesim(candidate)[0], params.get_pctsize(m_size))
+                                    logging.debug("SUPER DEBUG: RecOvl: %.3f (min %.3f)", member.recovl(candidate), params.pctovl)
+
+                            if mat.state:
+                                matched = True
+                                break
+                    
+                    if matched:
+                        current_group.append(candidate)
+                        used[j] = True
+                        changed = True
             
             if args.debug:
-                logging.debug("Chunk %d has %d variants", chunk_id, len(variants))
-
-            group_count = 0
-            for i, var in enumerate(variants):
-                if used[i]:
-                    continue
-                
-                # Start a new group
-                group_count += 1
-                current_group = [var]
-                used[i] = True
-                
-                # Find all matching variants (chaining)
-                # This is O(N^2) within a chunk, but chunks are small
-                changed = True
-                while changed:
-                    changed = False
-                    for j, candidate in enumerate(variants):
-                        if used[j]:
-                            continue
-                        
-                        # Pre-filter check to avoid calling match() too much (which logs debug)
-                        # Check if candidate overlaps with the expanded range of ANY member of current_group
-                        matched = False
-                        for member in current_group:
-                            vstart, vend = member.boundaries()
-                            cstart, cend = candidate.boundaries()
-                            
-                            # Manual debug for the problematic chr18 variants
-                            if args.debug and member.chrom == "chr18" and candidate.chrom == "chr18":
-                                if (abs(member.pos - 14313385) < 10 and abs(candidate.pos - 14313170) < 10) or \
-                                   (abs(member.pos - 14313170) < 10 and abs(candidate.pos - 14313385) < 10):
-                                    logging.debug("MANUAL CHECK: Comparing %r and %r", member, candidate)
-                                    logging.debug("MANUAL CHECK: Overlap check: %s", truvari.overlaps(vstart - params.refdist, vend + params.refdist, cstart, cend))
-
-                            if truvari.overlaps(vstart - params.refdist, vend + params.refdist, cstart, cend):
-                                mat = member.match(candidate)
-                                if mat.state:
-                                    matched = True
-                                    break
-                        
-                        if matched:
-                            current_group.append(candidate)
-                            used[j] = True
-                            changed = True
-                
-                if args.debug:
-                    logging.debug("Group %d has %d members: %s", group_count, len(current_group), 
-                                  ", ".join([f"{v!r}" for v in current_group]))
+                logging.debug("Group %d has %d members: %s", group_count, len(current_group), 
+                              ", ".join([f"{v!r}" for v in current_group]))
             
             # current_group now has all linked variants
             # We pick the first one as representative
