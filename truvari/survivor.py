@@ -210,6 +210,8 @@ def survivor_main(args):
                                    short_circuit=False,
                                    skip_gt=True,
                                    sizefilt=args.sizemin)
+    reference = pysam.FastaFile(params.reference) if params.reference else None
+
     # Extra attributes needed
     params.sorter = SORTS['first']
     params.gt = 'off'
@@ -280,6 +282,7 @@ def survivor_main(args):
             # current_group now has all linked variants
             # Calculate median POS and END
             import statistics
+            import re
             
             # Median position and stop
             med_pos = int(statistics.median([v.pos for v in current_group]))
@@ -290,16 +293,48 @@ def survivor_main(args):
             type_counts = Counter([v.var_type().name for v in current_group])
             consensus_type = type_counts.most_common(1)[0][0]
 
-            # We pick the representative as the one closest to the median or just the first
-            rep = current_group[0]
+            # We pick the representative as the one closest to the median
+            rep = min(current_group, key=lambda x: abs(x.pos - med_pos))
             
             # Create a new record in the output
             new_record = out_vcf.new_record()
             new_record.chrom = rep.chrom
             new_record.pos = med_pos
             new_record.id = rep.id
-            new_record.ref = rep.ref
-            new_record.alts = rep.alts
+            
+            # Ensure REF consistency
+            if reference:
+                try:
+                    new_record.ref = reference.fetch(rep.chrom, med_pos, med_pos + 1)
+                except (ValueError, KeyError, IndexError):
+                    new_record.ref = rep.ref
+            else:
+                new_record.ref = rep.ref
+            
+            # Handle BND ALTs
+            if consensus_type == "BND":
+                mate_positions = []
+                mate_chrom = None
+                for v in current_group:
+                    try:
+                        mc, mp = v.bnd_position()
+                        mate_chrom = mc
+                        mate_positions.append(mp)
+                    except ValueError:
+                        continue
+                if mate_positions:
+                    med_mate_pos = int(statistics.median(mate_positions))
+                    # Reconstruct ALT using med_mate_pos
+                    # We take the bracket style from the representative
+                    new_alt = re.sub(r'([\[\]])[^\[\]]+:[0-9]+([\[\]])', 
+                                     fr'\1{mate_chrom}:{med_mate_pos}\2', 
+                                     rep.alts[0])
+                    new_record.alts = (new_alt,)
+                else:
+                    new_record.alts = rep.alts
+            else:
+                new_record.alts = rep.alts
+
             new_record.qual = rep.qual
             
             # Copy filters
@@ -322,16 +357,19 @@ def survivor_main(args):
             # For standard SVs, SVLEN is often end - pos (negative for DEL)
             # Truvari's var_size() is always positive. 
             # We'll follow the convention of the consensus type if possible
-            svlen = med_stop - med_pos
-            if consensus_type == "DEL":
-                svlen = -svlen
-            elif consensus_type == "INS":
-                # For insertions, end is usually pos + 1, so med_stop - med_pos = 1
-                # We should take the median of the actual SVLENs if they exist
-                sizes = []
-                for v in current_group:
-                    sizes.append(v.var_size())
-                svlen = int(statistics.median(sizes))
+            if consensus_type == "BND":
+                svlen = 0
+            else:
+                svlen = med_stop - med_pos
+                if consensus_type == "DEL":
+                    svlen = -svlen
+                elif consensus_type == "INS":
+                    # For insertions, end is usually pos + 1, so med_stop - med_pos = 1
+                    # We should take the median of the actual SVLENs if they exist
+                    sizes = []
+                    for v in current_group:
+                        sizes.append(v.var_size())
+                    svlen = int(statistics.median(sizes))
             
             new_record.info["SVLEN"] = svlen
 
