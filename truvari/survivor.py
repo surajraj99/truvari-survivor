@@ -243,35 +243,12 @@ def survivor_main(args):
                     # Check if candidate matches ANY member of current_group
                     matched = False
                     for member in current_group:
-                        # Manual super-debug for the problematic chr18 variants
-                        is_target = False
-                        if args.debug and chrom == "chr18":
-                            m_pos = member.pos + 1
-                            c_pos = candidate.pos + 1
-                            if (abs(m_pos - 14313385) < 50 or abs(m_pos - 14313170) < 50) and \
-                               (abs(c_pos - 14313385) < 50 or abs(c_pos - 14313170) < 50):
-                                is_target = True
-                                logging.debug("SUPER DEBUG: Comparing %r and %r", member, candidate)
-
                         vstart, vend = member.boundaries()
                         cstart, cend = candidate.boundaries()
                         
                         # Within range check
-                        in_range = truvari.overlaps(vstart - params.refdist, vend + params.refdist, cstart, cend)
-                        if is_target:
-                            logging.debug("SUPER DEBUG: In range check: %s (dist: %d)", in_range, abs(vstart - cstart))
-
-                        if in_range:
+                        if truvari.overlaps(vstart - params.refdist, vend + params.refdist, cstart, cend):
                             mat = member.match(candidate)
-                            if is_target:
-                                logging.debug("SUPER DEBUG: Match state: %s", mat.state)
-                                if not mat.state:
-                                    # Log why it failed
-                                    m_size = min(member.var_size(), candidate.var_size())
-                                    logging.debug("SUPER DEBUG: SVTYPE same: %s (%s vs %s)", member.var_type() == candidate.var_type(), member.var_type(), candidate.var_type())
-                                    logging.debug("SUPER DEBUG: Sizesim: %.3f (min %.3f)", member.sizesim(candidate)[0], params.get_pctsize(m_size))
-                                    logging.debug("SUPER DEBUG: RecOvl: %.3f (min %.3f)", member.recovl(candidate), params.pctovl)
-
                             if mat.state:
                                 matched = True
                                 break
@@ -286,13 +263,25 @@ def survivor_main(args):
                               ", ".join([f"{v!r}" for v in current_group]))
             
             # current_group now has all linked variants
-            # We pick the first one as representative
+            # Calculate median POS and END
+            import statistics
+            
+            # Median position and stop
+            med_pos = int(statistics.median([v.pos for v in current_group]))
+            med_stop = int(statistics.median([v.stop for v in current_group]))
+            
+            # Determine the consensus SVTYPE (most frequent normalized type)
+            from collections import Counter
+            type_counts = Counter([v.var_type().name for v in current_group])
+            consensus_type = type_counts.most_common(1)[0][0]
+
+            # We pick the representative as the one closest to the median or just the first
             rep = current_group[0]
             
             # Create a new record in the output
             new_record = out_vcf.new_record()
             new_record.chrom = rep.chrom
-            new_record.pos = rep.pos
+            new_record.pos = med_pos
             new_record.id = rep.id
             new_record.ref = rep.ref
             new_record.alts = rep.alts
@@ -304,14 +293,32 @@ def survivor_main(args):
             
             # Copy INFO from representative
             for k, v in rep.info.items():
-                if k in out_header.info and k != "END":
+                if k in out_header.info and k not in ["END", "SVLEN", "SVTYPE"]:
                     try:
                         new_record.info[k] = v
                     except (TypeError, ValueError):
                         continue
             
-            # Properly set END/stop (max of group)
-            new_record.stop = max(_.stop for _ in current_group)
+            # Set consensus/calculated fields
+            new_record.info["SVTYPE"] = consensus_type
+            new_record.stop = med_stop
+            
+            # Calculate SVLEN
+            # For standard SVs, SVLEN is often end - pos (negative for DEL)
+            # Truvari's var_size() is always positive. 
+            # We'll follow the convention of the consensus type if possible
+            svlen = med_stop - med_pos
+            if consensus_type == "DEL":
+                svlen = -svlen
+            elif consensus_type == "INS":
+                # For insertions, end is usually pos + 1, so med_stop - med_pos = 1
+                # We should take the median of the actual SVLENs if they exist
+                sizes = []
+                for v in current_group:
+                    sizes.append(v.var_size())
+                svlen = int(statistics.median(sizes))
+            
+            new_record.info["SVLEN"] = svlen
 
             # Calculate SURVIVOR fields
             num_callers = len(callers)
