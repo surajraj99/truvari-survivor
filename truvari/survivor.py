@@ -179,23 +179,22 @@ def survivor_main(args):
     """
     args = parse_args(args)
     
-    # Setup console logging at INFO level by default
-    # If --debug is passed, we'll set it to DEBUG later
-    truvari.setup_logging(False, show_version=True)
+    # Setup console logging. If --debug is True, this sets root to DEBUG.
+    # Otherwise, it sets root to INFO.
+    truvari.setup_logging(args.debug, show_version=True)
     
-    # If --log or --debug is set, the root logger needs to be at DEBUG 
-    # so that the messages are processed at all
-    if args.debug or args.log:
-        logging.getLogger().setLevel(logging.DEBUG)
-
-    # If --debug is set, we ensure the console (StreamHandler) is at DEBUG
-    if args.debug:
-        for handler in logging.getLogger().handlers:
-            if isinstance(handler, logging.StreamHandler):
-                handler.setLevel(logging.DEBUG)
-
-    # If --log is set, we add a FileHandler at DEBUG level
+    # If we have a log file, we need to ensure the root logger is at DEBUG 
+    # so that debug messages are generated at all.
     if args.log:
+        if not args.debug:
+            # Bump root to DEBUG to catch everything for the file
+            logging.getLogger().setLevel(logging.DEBUG)
+            # But explicitly restrict console handlers to INFO
+            for handler in logging.getLogger().handlers:
+                if isinstance(handler, logging.StreamHandler):
+                    handler.setLevel(logging.INFO)
+        
+        # Add the FileHandler at DEBUG level
         fh = logging.FileHandler(args.log)
         fh.setLevel(logging.DEBUG)
         fh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
