@@ -293,6 +293,21 @@ def survivor_main(args):
             type_counts = Counter([v.var_type().name for v in current_group])
             consensus_type = type_counts.most_common(1)[0][0]
 
+            # For BND/TRA, also find consensus CHR2 and second positions
+            consensus_chr2 = None
+            mate_positions = []
+            if consensus_type in ["BND", "TRA"]:
+                chr2_counts = Counter()
+                for v in current_group:
+                    try:
+                        mc, mp = v.bnd_position()
+                        chr2_counts[mc] += 1
+                        mate_positions.append(mp)
+                    except ValueError:
+                        continue
+                if chr2_counts:
+                    consensus_chr2 = chr2_counts.most_common(1)[0][0]
+
             # We pick the representative as the one closest to the median
             rep = min(current_group, key=lambda x: abs(x.pos - med_pos))
             
@@ -313,21 +328,12 @@ def survivor_main(args):
             
             # Handle BND ALTs
             if consensus_type == "BND":
-                mate_positions = []
-                mate_chrom = None
-                for v in current_group:
-                    try:
-                        mc, mp = v.bnd_position()
-                        mate_chrom = mc
-                        mate_positions.append(mp)
-                    except ValueError:
-                        continue
                 if mate_positions:
                     med_mate_pos = int(statistics.median(mate_positions))
-                    # Reconstruct ALT using med_mate_pos
+                    # Reconstruct ALT using med_mate_pos and consensus_chr2
                     # We take the bracket style from the representative
                     new_alt = re.sub(r'([\[\]])[^\[\]]+:[0-9]+([\[\]])', 
-                                     fr'\1{mate_chrom}:{med_mate_pos}\2', 
+                                     fr'\g<1>{consensus_chr2}:{med_mate_pos}\g<2>', 
                                      rep.alts[0])
                     new_record.alts = (new_alt,)
                 else:
@@ -343,7 +349,7 @@ def survivor_main(args):
             
             # Copy INFO from representative
             for k, v in rep.info.items():
-                if k in out_header.info and k not in ["END", "SVLEN", "SVTYPE"]:
+                if k in out_header.info and k not in ["END", "SVLEN", "SVTYPE", "CHR2"]:
                     try:
                         new_record.info[k] = v
                     except (TypeError, ValueError):
@@ -351,13 +357,20 @@ def survivor_main(args):
             
             # Set consensus/calculated fields
             new_record.info["SVTYPE"] = consensus_type
-            new_record.stop = med_stop
+            if consensus_type == "TRA":
+                new_record.info["CHR2"] = consensus_chr2
+                if mate_positions:
+                    new_record.stop = int(statistics.median(mate_positions))
+                else:
+                    new_record.stop = med_stop
+            else:
+                new_record.stop = med_stop
             
             # Calculate SVLEN
             # For standard SVs, SVLEN is often end - pos (negative for DEL)
             # Truvari's var_size() is always positive. 
             # We'll follow the convention of the consensus type if possible
-            if consensus_type == "BND":
+            if consensus_type in ["BND", "TRA"]:
                 svlen = 0
             else:
                 svlen = med_stop - med_pos

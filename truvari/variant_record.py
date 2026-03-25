@@ -113,8 +113,15 @@ class VariantRecord:
             direction = "left"
         elif bnd.startswith(']') or bnd.endswith(']'):
             direction = "right"
+        elif "STRANDS" in self.info:
+            # Fallback for symbolic BNDs/TRAs (e.g. Lumpy)
+            s = self.info["STRANDS"]
+            if isinstance(s, (list, tuple)):
+                s = s[0]
+            # Simple mapping, might need refinement
+            return s, s
         else:
-            raise ValueError(f"Invalid BND ALT format: {bnd}")
+            return None, None
 
         # Determine strand based on the position of the base letter
         if bnd[0] not in '[]':  # Base letter is at the start (before brackets)
@@ -141,13 +148,22 @@ class VariantRecord:
         """
         # Regular expression to match the BND format and extract chrom:pos
         match = re.search(r'[\[\]]([^\[\]:]+):(\d+)[\[\]]', self.alts[0])
-        if not match:
-            raise ValueError(f"Invalid BND ALT format: {self.alts[0]}")
+        if match:
+            chrom = match.group(1)  # Extract the chromosome
+            pos = int(match.group(2))  # Extract the position as an integer
+            return chrom, pos
+        
+        if "CHR2" in self.info:
+            chrom = self.info["CHR2"]
+            if isinstance(chrom, (list, tuple)):
+                chrom = chrom[0]
+            # Use self.stop if END is missing from info
+            pos = self.info["END"] if "END" in self.info else self.stop
+            if isinstance(pos, (list, tuple)):
+                pos = pos[0]
+            return chrom, int(pos)
 
-        chrom = match.group(1)  # Extract the chromosome
-        pos = int(match.group(2))  # Extract the position as an integer
-
-        return chrom, pos
+        raise ValueError(f"Invalid BND ALT format: {self.alts[0]}")
 
     def bnd_match(self, other):
         """
@@ -163,8 +179,15 @@ class VariantRecord:
             key = 'CI' + key
             idx = 0 if key == 'POS' else 1
             if key in entry.info:
-                start -= abs(entry.info[key][idx])
-                end += abs(entry.info[key][idx])
+                if isinstance(entry.info[key], (list, tuple)):
+                    try:
+                        start -= abs(int(entry.info[key][0]))
+                        end += abs(int(entry.info[key][1]))
+                    except (ValueError, TypeError):
+                        pass
+                else:
+                    # Some callers might have non-standard CI
+                    pass
 
             return start, end
 
@@ -185,8 +208,12 @@ class VariantRecord:
                           str(self), str(other))
             return ret
 
-        b_pos2 = self.bnd_position()
-        c_pos2 = other.bnd_position()
+        try:
+            b_pos2 = self.bnd_position()
+            c_pos2 = other.bnd_position()
+        except ValueError:
+            return ret
+
         if b_pos2[0] != c_pos2[0]:
             logging.debug("%s and %s BND join CHROM", str(self), str(other))
             return ret
@@ -234,7 +261,10 @@ class VariantRecord:
         :rtype: tuple (int, int)
         """
         start = self.start
-        end = self.end
+        if self.var_type() in [truvari.SV.BND, truvari.SV.TRA]:
+            end = self.start + 1
+        else:
+            end = self.end
         if ins_inflate and self.var_type() == truvari.SV.INS:
             size = self.var_size()
             start -= size // 2
@@ -414,9 +444,32 @@ class VariantRecord:
 
     def is_bnd(self):
         """
-        Returns if a record is a resolved BND
+        Returns if a record is a breakend
         """
-        return '[' in self._record.alts[0] or ']' in self._record.alts[0]
+        if self._record.alts is None:
+            return False
+
+        try:
+            if self._record.alleles_variant_types[1] == 'BND':
+                return True
+        except (IndexError, AttributeError):
+            pass
+
+        alt = self._record.alts[0]
+        if '[' in alt or ']' in alt:
+            return True
+
+        if alt in ["<BND>", "<TRA>"]:
+            return True
+
+        if "SVTYPE" in self.info:
+            svtype = self.info["SVTYPE"]
+            if isinstance(svtype, (list, tuple)):
+                svtype = svtype[0]
+            if svtype in ["BND", "TRA"]:
+                return True
+
+        return False
 
     def is_filtered(self, values=None):
         """
@@ -863,8 +916,9 @@ class VariantRecord:
                 size = self.info["SVLEN"]
             try:
                 size = abs(int(size))
-                self._varsize = size
-                return size
+                if size != 0:
+                    self._varsize = size
+                    return size
             except ValueError:
                 pass
 

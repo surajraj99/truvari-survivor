@@ -48,7 +48,8 @@ class SV(Enum):
     INV = 4
     NON = 5  # Not a variant (monomorphic ref?)
     BND = 6
-    UNK = 7  # Unknown type
+    TRA = 7
+    UNK = 8  # Unknown type
 
 
 SZBINS = ['SNP', '[1,5)', '[5,10)', '[10,15)', '[15,20)', '[20,30)', '[30,40)',
