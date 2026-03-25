@@ -122,6 +122,7 @@ def create_survivor_header(callers):
     header.add_line('##INFO=<ID=SUPP,Number=1,Type=Integer,Description="Number of callers supporting the variant">')
     header.add_line('##INFO=<ID=SUPP_VEC,Number=1,Type=String,Description="Vector of callers supporting the variant">')
     header.add_line('##INFO=<ID=CALLERS,Number=.,Type=String,Description="Names of callers supporting the variant">')
+    header.add_line('##INFO=<ID=CALLER_IDS,Number=.,Type=String,Description="Original variant IDs from each supporting caller">')
     
     # Add standard GT field
     header.add_line('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">')
@@ -390,14 +391,22 @@ def survivor_main(args):
             num_callers = len(callers)
             supp_vec = [0] * num_callers
             caller_ids = set()
+            caller_variant_ids = []
+            seen_caller_ids = set()
+            
             for v in current_group:
                 if hasattr(v, 'caller_id'):
                     caller_ids.add(v.caller_id)
                     supp_vec[v.caller_id] = 1
+                    # Store original variant ID if it exists
+                    if v.id and v.id != '.':
+                        caller_variant_ids.append(f"{callers[v.caller_id].name}:{v.id}")
             
             new_record.info["SUPP"] = len(caller_ids)
             new_record.info["SUPP_VEC"] = "".join(map(str, supp_vec))
             new_record.info["CALLERS"] = [callers[idx].name for idx in sorted(list(caller_ids))]
+            if caller_variant_ids:
+                new_record.info["CALLER_IDS"] = caller_variant_ids
             
             # Set genotypes for each caller
             caller_to_record = {}
