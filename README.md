@@ -41,9 +41,37 @@ Use Truvari's comparison engine to consolidate redundant variants in a merged mu
     truvari collapse -i merge.vcf.gz -o truvari_merge.vcf
 ```
 
+### truvari survivor
+N-way VCF merging with SURVIVOR-style support tracking. This command groups variants from multiple VCFs and annotates the merged records with support metrics.
+
+```
+    truvari survivor -i caller1.vcf caller2.vcf caller3.vcf -o merged.vcf
+```
+
+**Key Parameters:**
+- `-i, --input`: List of input VCFs to merge.
+- `-l, --list`: A text file containing a list of VCF paths to merge.
+- `-o, --output`: Path to the output merged VCF.
+- `-r, --refdist`: Max reference location distance for grouping (default: 500).
+- `-P, --pctsize`: Min percent size similarity (default: 0.50).
+- `-O, --pctovl`: Min reciprocal overlap for non-BND variants (default: 0.50).
+- `-p, --pctseq`: Min percent sequence similarity (default: 0.0).
+- `-B, --bnddist`: Max distance allowed between BNDs (defaults to refdist).
+- `--strandignore`: Ignore strand/orientation mismatches during BND comparison (default: True).
+- `-D, --decompose`: Allow decomposition of symbolic SVs to BNDs for cross-type comparison.
+- `-s, --sizemin`: Minimum variant size to consider (default: 50).
+- `--passonly`: Only consider variants with `FILTER == PASS`.
+
+**Merged Annotations:**
+- `SUPP`: Number of callers supporting the variant.
+- `SUPP_VEC`: A bit-vector (string) indicating which callers support the variant.
+- `CALLERS`: Names of the supporting callers.
+- `CALLER_IDS`: Original variant IDs from each supporting caller.
+
 ## 🧬 Truvari Commands
 
  - [bench](https://github.com/acenglish/truvari/wiki/bench) - Performance metrics from comparison of two VCFs
+ - [survivor](https://github.com/acenglish/truvari/wiki/survivor) - N-way VCF merging with support tracking
  - [collapse](https://github.com/acenglish/truvari/wiki/collapse) - Collapse possibly redundant VCF entries
  - [refine](https://github.com/ACEnglish/truvari/wiki/refine) - Automated bench result refinement with phab
  - [anno](https://github.com/acenglish/truvari/wiki/anno) - Add SV annotations to a VCF
