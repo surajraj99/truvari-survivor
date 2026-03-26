@@ -36,9 +36,9 @@ def parse_args(args):
                         help="Max reference location distance (%(default)s)")
     thresg.add_argument("-p", "--pctseq", type=truvari.restricted_float, default=0.0,
                         help="Min percent sequence similarity. Set to 0 to ignore. (%(default)s)")
-    thresg.add_argument("-P", "--pctsize", type=truvari.restricted_float, default=0.70,
+    thresg.add_argument("-P", "--pctsize", type=truvari.restricted_float, default=0.50,
                         help="Min pct allele size similarity (minvarsize/maxvarsize) (%(default)s)")
-    thresg.add_argument("-O", "--pctovl", type=truvari.restricted_float, default=0.70,
+    thresg.add_argument("-O", "--pctovl", type=truvari.restricted_float, default=0.50,
                         help="Min pct reciprocal overlap (%(default)s)")
     thresg.add_argument("-t", "--typeignore", action="store_true", default=False,
                         help="Variant types don't need to match to compare (%(default)s)")
@@ -50,8 +50,12 @@ def parse_args(args):
                         help="Allow decomposition for SV to BND comparison (%(default)s)")
     thresg.add_argument("-d", "--dup-to-ins", action="store_true",
                         help="Assume DUP svtypes are INS (%(default)s)")
-    thresg.add_argument("-B", "--bnddist", type=int, default=100,
-                        help="Maximum distance allowed between BNDs (%(default)s; -1=off)")
+    thresg.add_argument("-B", "--bnddist", type=int, default=None,
+                        help="Maximum distance allowed between BNDs (refdist; -1=off)")
+    thresg.add_argument("--strandignore", action="store_true", default=True,
+                        help="Ignore strand mismatches during comparison (%(default)s)")
+    thresg.add_argument("--no-strandignore", action="store_false", dest="strandignore",
+                        help="Do not ignore strand mismatches during comparison")
     thresg.add_argument("--dynthresh", type=str, default=None,
                         help="Dynamic thres params (min_diff,max_diff,s_min,s_max) overrides pctsize/pctseq (off)")
 
@@ -179,6 +183,8 @@ def survivor_main(args):
     Main entrypoint for survivor
     """
     args = parse_args(args)
+    if args.bnddist is None:
+        args.bnddist = args.refdist
     
     # Setup console logging. If --debug is True, this sets root to DEBUG.
     # Otherwise, it sets root to INFO.

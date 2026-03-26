@@ -230,8 +230,7 @@ class VariantRecord:
         b_bnd = self.bnd_direction_strand()
         c_bnd = other.bnd_direction_strand()
 
-        ovl = b_bnd == c_bnd
-        if not ovl:
+        if not self.params.strandignore and b_bnd != c_bnd:
             logging.debug("%s and %s BND strand/direction mismatch",
                           str(self), str(other))
             return ret

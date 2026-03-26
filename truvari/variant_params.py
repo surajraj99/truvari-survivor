@@ -67,6 +67,8 @@ class VariantParams():
          - Maximum size of a variant to attempt sequence resolving. Default: 25000.
        * - `dynthresh`
          - Tuple of parameters for dynamic thresholding (min_diff, max_diff, sz_min, sz_max) Default: `None`=off
+       * - `strandignore`
+         - Whether to ignore strand mismatches during comparison (e.g. for BNDs). Default: `False`.
     """
 
     DEFAULTS = {
@@ -97,7 +99,8 @@ class VariantParams():
         "short_circuit": False,
         "skip_gt": False,
         "max_resolve": 25000,
-        "dynthresh": None
+        "dynthresh": None,
+        "strandignore": False
     }
 
     def __init__(self, args=None, **kwargs):
