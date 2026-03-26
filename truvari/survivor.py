@@ -15,6 +15,14 @@ import pysam
 import truvari
 from truvari.collapse import collapse_chunk, SORTS
 
+def normalize_chrom(chrom):
+    """
+    Remove 'chr' prefix from chromosome names for consistent comparison
+    """
+    if chrom and chrom.lower().startswith("chr"):
+        return chrom[3:]
+    return chrom
+
 @dataclass
 class Caller:
     """
@@ -117,6 +125,9 @@ def tagged_variant_stream_single(caller, params):
     with truvari.VariantFile(caller.vcf_path, params=params) as vcf:
         for record in vcf:
             record.caller_id = caller.index
+            # Store normalized chromosome name for consistent merging
+            # We don't set record.chrom directly as it might not be in the original header
+            record.norm_chrom = normalize_chrom(record.chrom)
             yield record
 
 def create_survivor_header(callers):
@@ -153,7 +164,11 @@ def create_survivor_header(callers):
                         continue
                     if record.type == "FILTER" and rid in header.filters:
                         continue
-                    if record.type == "CONTIG" and rid in header.contigs:
+                    if record.type == "CONTIG":
+                        rid = normalize_chrom(rid)
+                        if rid in header.contigs:
+                            continue
+                        header.add_line(f"##contig=<ID={rid}>")
                         continue
                     header.add_record(record)
         header.add_sample(caller.name)
@@ -239,7 +254,7 @@ def survivor_main(args):
     # This prevents split-chromosome issues due to non-lexicographical sorting in VCFs
     all_chrom_variants = defaultdict(list)
     for key, var in variant_stream:
-        all_chrom_variants[var.chrom].append(var)
+        all_chrom_variants[var.norm_chrom].append(var)
 
     for chrom, variants in all_chrom_variants.items():
         logging.info("Processing chromosome %s", chrom)
@@ -320,11 +335,11 @@ def survivor_main(args):
             
             # Create a new record in the output
             new_record = out_vcf.new_record()
-            new_record.chrom = rep.chrom
+            new_record.chrom = rep.norm_chrom
             new_record.pos = med_pos
             
             # Reproducible coordinate-based ID generation
-            id_key = f"{consensus_type}_{rep.chrom}_{med_pos}_{med_stop}"
+            id_key = f"{consensus_type}_{rep.norm_chrom}_{med_pos}_{med_stop}"
             if consensus_chr2:
                 id_key += f"_{consensus_chr2}"
             new_record.id = f"truv_{hashlib.sha1(id_key.encode()).hexdigest()[:8]}"
@@ -334,7 +349,11 @@ def survivor_main(args):
                 try:
                     new_record.ref = reference.fetch(rep.chrom, med_pos, med_pos + 1)
                 except (ValueError, KeyError, IndexError):
-                    new_record.ref = rep.ref
+                    # Fallback to fetching by normalized chrom if original chrom fails
+                    try:
+                        new_record.ref = reference.fetch(rep.norm_chrom, med_pos, med_pos + 1)
+                    except (ValueError, KeyError, IndexError):
+                        new_record.ref = rep.ref
             else:
                 new_record.ref = rep.ref
             

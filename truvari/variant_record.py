@@ -14,7 +14,16 @@ SV_ALT_MATCH = re.compile(r"\<(?P<SVTYPE>.*)\>")
 # pylint: disable=attribute-defined-outside-init,too-many-instance-attributes
 
 
-class VariantRecord:
+def normalize_chrom(chrom):
+    """
+    Remove 'chr' prefix from chromosome names for consistent comparison
+    """
+    if chrom and chrom.lower().startswith("chr"):
+        return chrom[3:]
+    return chrom
+
+class VariantRecord():
+
     """
     Wrapper around pysam.VariantRecords with helper functions of variant properties and basic comparisons
     """
@@ -149,12 +158,12 @@ class VariantRecord:
         # Regular expression to match the BND format and extract chrom:pos
         match = re.search(r'[\[\]]([^\[\]:]+):(\d+)[\[\]]', self.alts[0])
         if match:
-            chrom = match.group(1)  # Extract the chromosome
+            chrom = normalize_chrom(match.group(1))  # Normalize the chromosome
             pos = int(match.group(2))  # Extract the position as an integer
             return chrom, pos
         
         if "CHR2" in self.info:
-            chrom = self.info["CHR2"]
+            chrom = normalize_chrom(self.info["CHR2"])
             if isinstance(chrom, (list, tuple)):
                 chrom = chrom[0]
             # Use self.stop if END is missing from info
@@ -196,8 +205,9 @@ class VariantRecord:
         ret.comp = other
 
         # Only annotate distance if same chrom
-        if self.chrom != other.chrom:
+        if normalize_chrom(self.chrom) != normalize_chrom(other.chrom):
             logging.debug("%s and %s BND CHROM", str(self), str(other))
+            ret.state = False
             return ret
 
         ret.st_dist = self.pos - other.pos
