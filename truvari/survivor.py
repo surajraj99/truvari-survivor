@@ -5,8 +5,11 @@ import os
 import sys
 import logging
 import argparse
+import statistics
+import re
+import hashlib
 from dataclasses import dataclass
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 import pysam
 import truvari
@@ -288,15 +291,12 @@ def survivor_main(args):
             
             # current_group now has all linked variants
             # Calculate median POS and END
-            import statistics
-            import re
             
             # Median position and stop
             med_pos = int(statistics.median([v.pos for v in current_group]))
             med_stop = int(statistics.median([v.stop for v in current_group]))
             
             # Determine the consensus SVTYPE (most frequent normalized type)
-            from collections import Counter
             type_counts = Counter([v.var_type().name for v in current_group])
             consensus_type = type_counts.most_common(1)[0][0]
 
@@ -322,7 +322,12 @@ def survivor_main(args):
             new_record = out_vcf.new_record()
             new_record.chrom = rep.chrom
             new_record.pos = med_pos
-            new_record.id = rep.id
+            
+            # Reproducible coordinate-based ID generation
+            id_key = f"{consensus_type}_{rep.chrom}_{med_pos}_{med_stop}"
+            if consensus_chr2:
+                id_key += f"_{consensus_chr2}"
+            new_record.id = f"truv_{hashlib.sha1(id_key.encode()).hexdigest()[:8]}"
             
             # Ensure REF consistency
             if reference:
